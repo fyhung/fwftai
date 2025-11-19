@@ -2,9 +2,8 @@ name: Daily News Scout
 
 on:
   schedule:
-    # Run at 9:00 AM Hong Kong Time every day.
-    # GitHub uses UTC time. HK is UTC+8.
-    # So 9:00 AM HK = 1:00 AM UTC.
+    # Run at 06:00 AM Hong Kong Time every day.
+    # (22:00 UTC + 8 hours = 06:00 AM HKT Next Day)
     - cron: '0 22 * * *'
   
   # This allows you to run it manually anytime to test it
@@ -32,3 +31,13 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
         run: python news_agent.py
+
+      # --- NEW STEP: SAVES THE DEBUG FILES ---
+      - name: Upload Debug Logs
+        if: always() # Runs even if the script crashes
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-logs
+          # Saves any text file starting with "debug_"
+          path: debug_*.txt 
+          retention-days: 5
