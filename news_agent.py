@@ -61,13 +61,13 @@ def run_news_scout():
             Format is: "HEADLINE: [Title] | LINK: [Url]"
 
             Your Goal: 
-            1. Filter this list for NEW articles specifically about 'Google Gemini'.
+            1. Filter this list for NEW articles specifically about 'Gemini'.
             2. If none found, output exactly: "None".
             3. If found, output a bullet point list.
             4. IMPORTANT: You MUST use the exact URL provided in the "LINK:" field.
             
             Format the output like this:
-            * [Headline Text](The URL) - Short 1-sentence summary.
+            * [Headline Text](The URL) - Short 1-sentence summary in trad. Chinese.
 
             Input Data:
             {text_content}
