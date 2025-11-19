@@ -39,7 +39,7 @@ def run_news_scout():
             prompt = f"""
             Scan this website text ({url}) for NEW articles about 'Google Gemini' (the AI model).
             If none, say "None".
-            If yes, give 2 bullet points with the headline and link.
+            If yes, give 3 bullet points with the headline, link, and summary.
             Website Text: {text_content}
             """
             
