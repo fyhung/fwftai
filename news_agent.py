@@ -4,11 +4,15 @@ import requests
 from bs4 import BeautifulSoup
 from google import genai
 
-# --- CONFIGURATION (READING FROM SECRETS) ---
-# We use os.environ.get() to read the hidden passwords from GitHub
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
+# --- CONFIGURATION ---
+# 1. Get the API Key
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
+# 2. Get Webhooks (Handles single link OR multiple links separated by comma)
+WEBHOOKS_RAW = os.environ.get("WEBHOOK_URL")
+WEBHOOK_LIST = WEBHOOKS_RAW.split(",") if WEBHOOKS_RAW else []
+
+# 3. The HK Tech List
 URLS_TO_SCAN = [
     "https://unwire.hk/",
     "https://unwire.pro/",
@@ -19,8 +23,8 @@ URLS_TO_SCAN = [
 ]
 
 def run_news_scout():
-    if not WEBHOOK_URL or not GEMINI_API_KEY:
-        print("❌ Error: Secrets not found. Make sure you added them in GitHub Settings.")
+    if not WEBHOOK_LIST or not GEMINI_API_KEY:
+        print("❌ Error: Secrets not found. Check GitHub Settings.")
         return
 
     client = genai.Client(api_key=GEMINI_API_KEY)
@@ -30,66 +34,82 @@ def run_news_scout():
     for url in URLS_TO_SCAN:
         try:
             print(f"Scanning: {url}")
-            response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+            # timeout=10 prevents it from hanging forever if a site is down
+            response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # --- NEW LOGIC START ---
+            # --- LINK EXTRACTION LOGIC ---
             links_data = []
-            base_domain = url.rstrip("/") # Helps fix relative links like "/news/article"
+            base_domain = url.rstrip("/") 
             
-            # Find all links on the page
             for a_tag in soup.find_all('a', href=True):
                 headline = a_tag.get_text(strip=True)
                 link = a_tag['href']
                 
-                # Filter out short/empty headlines to save space
+                # Filter short junk text
                 if len(headline) > 10:
-                    # Fix relative links (e.g. convert "/news/123" to "https://unwire.hk/news/123")
+                    # Fix relative links (e.g. "/news/123" -> "https://site.com/news/123")
                     if link.startswith("/"):
                         link = base_domain + link
                     elif not link.startswith("http"):
-                        continue # Skip javascript: or mailto: links
+                        continue 
                     
                     links_data.append(f"HEADLINE: {headline} | LINK: {link}")
 
-            # Combine into a big text block, limited to first 200 links to prevent errors
+            # Limit to 200 links to prevent crashing the AI
             text_content = "\n".join(list(set(links_data))[:200]) 
-            # --- NEW LOGIC END ---
+            
+            # --- DEBUG LOGGING (Saves file for you to check later) ---
+            # This creates a text file that GitHub will upload as an artifact
+            clean_name = base_domain.replace("https://", "").replace("http://", "").replace("/", "")
+            with open(f"debug_{clean_name}.txt", "w", encoding="utf-8") as f:
+                f.write(f"Source: {url}\n\n{text_content}")
+            # -------------------------------------------------------
 
+            # --- GEMINI PROMPT ---
             prompt = f"""
             I am providing a list of links extracted from a website ({url}).
             Format is: "HEADLINE: [Title] | LINK: [Url]"
 
             Your Goal: 
-            1. Filter this list for NEW articles specifically about 'Gemini'.
-            2. If none found, output exactly: "None".
-            3. If found, output a bullet point list.
-            4. IMPORTANT: You MUST use the exact URL provided in the "LINK:" field.
+            1. Filter this list for NEW articles specifically about 'Gemini' (The Google AI).
+            2. Ignore generic AI news unless it explicitly mentions Gemini.
+            3. If none found, output exactly: "None".
             
-            Format the output like this:
-            * [Headline Text](The URL) - Short 1-sentence summary in trad. Chinese.
+            Output Format:
+            * [Headline Text](The URL) - Short 1-sentence summary in Traditional Chinese (繁體中文).
 
             Input Data:
             {text_content}
             """
             
-            # Using the Flash model because it's fast and free-tier friendly
             response = client.models.generate_content(
                 model="gemini-2.0-flash", 
                 contents=prompt
             )
             
             result = response.text.strip()
-            if "None" not in result:
+            
+            # Only add to report if it's not "None"
+            if "None" not in result and len(result) > 5:
                 daily_summary.append(f"*Source: {url}*\n{result}")
 
         except Exception as e:
             print(f"⚠️ Error scanning {url}: {e}")
 
+    # --- SENDING TO CHAT ---
     if daily_summary:
-        final_message = "*🤖 Daily Gemini News Report*\n\n" + "\n\n".join(daily_summary)
-        requests.post(WEBHOOK_URL, json={"text": final_message})
-        print("✅ Report sent to Chat!")
+        final_message = "*🤖 Daily Gemini News Report (HK Edition)*\n\n" + "\n\n".join(daily_summary)
+        
+        # Loop through all your chat rooms
+        for webhook in WEBHOOK_LIST:
+            webhook = webhook.strip() # Clean up spaces
+            if webhook:
+                try:
+                    requests.post(webhook, json={"text": final_message})
+                    print(f"✅ Sent to: ...{webhook[-10:]}")
+                except Exception as e:
+                    print(f"❌ Failed to send to chat: {e}")
     else:
         print("No news found today.")
 
