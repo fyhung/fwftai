@@ -12,6 +12,7 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 URLS_TO_SCAN = [
     "https://unwire.hk/",
     "https://unwire.pro/",
+    "https://www.koc.com.tw/",
     "https://hk.xfastest.com/",
     "https://www.hk01.com/"
 ]
