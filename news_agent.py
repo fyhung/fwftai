@@ -10,8 +10,10 @@ WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 URLS_TO_SCAN = [
-    "https://techcrunch.com/tag/artificial-intelligence/",
-    "https://www.theverge.com/ai-artificial-intelligence"
+    "https://unwire.hk/",
+    "https://unwire.pro/",
+    "https://hk.xfastest.com/",
+    "https://www.hk01.com/"
 ]
 
 def run_news_scout():
