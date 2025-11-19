@@ -31,16 +31,44 @@ def run_news_scout():
             response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # Remove junk
-            for script in soup(["script", "style"]):
-                script.decompose()
-            text_content = soup.get_text()[:50000]
+            # --- NEW LOGIC START ---
+            links_data = []
+            base_domain = url.rstrip("/") # Helps fix relative links like "/news/article"
+            
+            # Find all links on the page
+            for a_tag in soup.find_all('a', href=True):
+                headline = a_tag.get_text(strip=True)
+                link = a_tag['href']
+                
+                # Filter out short/empty headlines to save space
+                if len(headline) > 10:
+                    # Fix relative links (e.g. convert "/news/123" to "https://unwire.hk/news/123")
+                    if link.startswith("/"):
+                        link = base_domain + link
+                    elif not link.startswith("http"):
+                        continue # Skip javascript: or mailto: links
+                    
+                    links_data.append(f"HEADLINE: {headline} | LINK: {link}")
+
+            # Combine into a big text block, limited to first 200 links to prevent errors
+            text_content = "\n".join(list(set(links_data))[:200]) 
+            # --- NEW LOGIC END ---
 
             prompt = f"""
-            Scan this website text ({url}) for NEW articles about 'Google Gemini' (the AI model).
-            If none, say "None".
-            If yes, give 3 bullet points with the headline, link, and summary.
-            Website Text: {text_content}
+            I am providing a list of links extracted from a website ({url}).
+            Format is: "HEADLINE: [Title] | LINK: [Url]"
+
+            Your Goal: 
+            1. Filter this list for NEW articles specifically about 'Google Gemini'.
+            2. If none found, output exactly: "None".
+            3. If found, output a bullet point list.
+            4. IMPORTANT: You MUST use the exact URL provided in the "LINK:" field.
+            
+            Format the output like this:
+            * [Headline Text](The URL) - Short 1-sentence summary.
+
+            Input Data:
+            {text_content}
             """
             
             # Using the Flash model because it's fast and free-tier friendly
