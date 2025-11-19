@@ -5,7 +5,7 @@ on:
     # Run at 9:00 AM Hong Kong Time every day.
     # GitHub uses UTC time. HK is UTC+8.
     # So 9:00 AM HK = 1:00 AM UTC.
-    - cron: '0 1 * * *'
+    - cron: '0 22 * * *'
   
   # This allows you to run it manually anytime to test it
   workflow_dispatch:
