@@ -14,6 +14,7 @@ URLS_TO_SCAN = [
     "https://unwire.pro/",
     "https://www.koc.com.tw/",
     "https://hk.xfastest.com/",
+    "https://www.hkepc.com/",
     "https://www.hk01.com/"
 ]
 
