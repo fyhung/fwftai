@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Cantonese STT & Diarization (WebGPU)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* iPad Optimized Touch & Scroll */
+        body { -webkit-tap-highlight-color: transparent; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        .scrollable { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+        .glass-panel { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.3); }
+        .speaker-1 { color: #2563eb; font-weight: 600; }
+        .speaker-2 { color: #16a34a; font-weight: 600; }
+        .speaker-unknown { color: #6b7280; font-weight: 600; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 h-screen flex flex-col overflow-hidden">
+
+    <!-- Header -->
+    <header class="bg-blue-600 text-white p-4 shadow-md flex justify-between items-center z-10 shrink-0">
+        <div>
+            <h1 class="text-xl md:text-2xl font-bold tracking-tight">Cantonese AI Transcriber</h1>
+            <p class="text-blue-100 text-xs md:text-sm">Real-time STT & Diarization • WebGPU</p>
+        </div>
+        <div id="gpu-status" class="bg-blue-700 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-yellow-400" id="status-indicator"></span>
+            <span id="status-text">Waiting to Load</span>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 flex flex-col md:flex-row gap-4 p-4 overflow-hidden">
+        
+        <!-- Left Panel: Controls & Dashboard -->
+        <section class="w-full md:w-1/3 flex flex-col gap-4 shrink-0 overflow-y-auto scrollable pb-4">
+            
+            <!-- Settings Card -->
+            <div class="glass-panel p-5 rounded-2xl shadow-sm">
+                <h2 class="text-lg font-bold mb-4 border-b pb-2">Settings</h2>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-semibold mb-1 text-slate-600">STT Model</label>
+                        <select id="model-select" class="w-full p-3 rounded-xl border border-slate-200 bg-white text-base focus:ring-2 focus:ring-blue-500 outline-none">
+                            <option value="Xenova/whisper-base">Whisper Base (~150MB - Faster)</option>
+                            <option value="Xenova/whisper-small">Whisper Small (~450MB - Better)</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold mb-1 text-slate-600">Mode</label>
+                        <select id="mode-select" class="w-full p-3 rounded-xl border border-slate-200 bg-white text-base focus:ring-2 focus:ring-blue-500 outline-none">
+                            <option value="single">Single User (Faster)</option>
+                            <option value="multi">Multi-Speaker (Diarization)</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold mb-1 text-slate-600">Output Style</label>
+                        <div class="flex bg-slate-100 p-1 rounded-xl">
+                            <button id="style-colloquial" class="flex-1 py-2 text-sm font-medium rounded-lg bg-white shadow-sm text-blue-600 transition-all">口語 (Colloquial)</button>
+                            <button id="style-formal" class="flex-1 py-2 text-sm font-medium rounded-lg text-slate-500 hover:text-slate-700 transition-all">書面語 (Formal)</button>
+                        </div>
+                    </div>
+                </div>
+
+                <button id="btn-load" class="w-full mt-6 bg-slate-800 text-white font-bold py-3.5 rounded-xl hover:bg-slate-700 active:scale-95 transition-all shadow-md">
+                    Load AI Models
+                </button>
+            </div>
+
+            <!-- Progress Dashboard (Hidden initially) -->
+            <div id="progress-container" class="glass-panel p-5 rounded-2xl shadow-sm hidden">
+                <h3 class="text-sm font-bold text-slate-600 mb-2">Downloading Weights (<span id="progress-file">...</span>)</h3>
+                <div class="w-full bg-slate-200 rounded-full h-3 mb-1 overflow-hidden">
+                    <div id="progress-bar" class="bg-blue-500 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+                <p id="progress-text" class="text-xs text-right text-slate-500 font-mono">0%</p>
+            </div>
+
+            <!-- Main Actions -->
+            <div class="glass-panel p-5 rounded-2xl shadow-sm flex flex-col gap-3">
+                <button id="btn-start" disabled class="w-full bg-green-500 text-white font-bold py-4 rounded-xl opacity-50 cursor-not-allowed flex justify-center items-center gap-2 text-lg transition-all">
+                    <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>
+                    Start Recording
+                </button>
+                <button id="btn-stop" disabled class="w-full bg-red-500 text-white font-bold py-4 rounded-xl opacity-50 cursor-not-allowed flex justify-center items-center gap-2 text-lg transition-all">
+                    <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clip-rule="evenodd"></path></svg>
+                    Stop & Finalize
+                </button>
+            </div>
+
+        </section>
+
+        <!-- Right Panel: Live Transcript & Post-Processing -->
+        <section class="flex-1 flex flex-col gap-4 min-w-0">
+            
+            <!-- Live View -->
+            <div class="glass-panel rounded-2xl shadow-sm flex-1 flex flex-col overflow-hidden relative">
+                <div class="border-b p-4 flex justify-between items-center bg-white/50">
+                    <h2 class="text-lg font-bold">Live Transcript</h2>
+                    <span id="vad-indicator" class="px-2 py-1 bg-slate-200 text-slate-500 rounded text-xs font-mono transition-colors">VAD: Silence</span>
+                </div>
+                <div id="transcript-box" class="flex-1 p-5 scrollable text-lg leading-relaxed space-y-3 bg-white/30">
+                    <p class="text-slate-400 italic text-center mt-10">Waiting to start...</p>
+                </div>
+            </div>
+
+            <!-- Export & Summary Panel -->
+            <div id="export-panel" class="glass-panel p-4 rounded-2xl shadow-sm hidden shrink-0">
+                <h3 class="font-bold mb-3 border-b pb-2">Post-Processing & Export</h3>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    <button id="btn-export-txt" class="bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 px-3 rounded-lg text-sm font-semibold transition-colors">📄 Export .txt</button>
+                    <button id="btn-export-json" class="bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 px-3 rounded-lg text-sm font-semibold transition-colors">📊 Export .json</button>
+                    <button id="btn-export-audio" class="bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 px-3 rounded-lg text-sm font-semibold transition-colors">🎵 Download .webm</button>
+                    <button id="btn-ai-summary" class="bg-purple-600 hover:bg-purple-700 text-white py-2 px-3 rounded-lg text-sm font-semibold transition-colors shadow-sm">✨ AI Summary</button>
+                </div>
+                
+                <!-- Summary Output Area -->
+                <div id="summary-area" class="mt-4 hidden border-t pt-4">
+                    <h4 class="font-bold text-purple-700 mb-2 text-sm">Meeting Minutes (AI Generated)</h4>
+                    <div id="summary-text" class="p-3 bg-purple-50 rounded-xl text-sm leading-relaxed text-slate-800 border border-purple-100 scrollable max-h-48">
+                        Generating...
+                    </div>
+                </div>
+            </div>
+
+        </section>
+    </main>
+
+    <!-- Inline Web Worker Script for AI Processing -->
+    <script id="worker-code" type="text/javascript">
+        // We use a Blob worker so we can keep everything in a single file
+        // and avoid blocking the main iPad UI thread during inference.
+        const workerScript = `
+        import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0-alpha.19';
+
+        // Configure environment for WebGPU
+        env.allowLocalModels = false;
+        env.backends.onnx.wasm.numThreads = 1;
+
+        let transcriber = null;
+        let segmenter = null;
+        let summarizer = null;
+
+        self.onmessage = async (e) => {
+            const { type, data } = e.data;
+
+            if (type === 'load_models') {
+                try {
+                    // 1. Load STT Model
+                    self.postMessage({ type: 'progress', file: 'Whisper STT', progress: 10 });
+                    transcriber = await pipeline('automatic-speech-recognition', data.model, {
+                        device: 'webgpu', 
+                        dtype: 'fp16',
+                        progress_callback: (x) => {
+                            if (x.status === 'progress') {
+                                self.postMessage({ type: 'progress', file: x.file, progress: x.progress });
+                            }
+                        }
+                    });
+
+                    // 2. Load Diarization Model (if Multi-Speaker)
+                    if (data.mode === 'multi') {
+                        self.postMessage({ type: 'progress', file: 'Pyannote Diarization', progress: 10 });
+                        // Using audio-frame-classification for segmentation
+                        segmenter = await pipeline('audio-frame-classification', 'Xenova/pyannote-segmentation-3.0', {
+                            device: 'webgpu',
+                            dtype: 'fp32', // Pyannote often requires fp32 to prevent NaNs
+                            progress_callback: (x) => {
+                                if (x.status === 'progress') {
+                                    self.postMessage({ type: 'progress', file: x.file, progress: x.progress });
+                                }
+                            }
+                        });
+                    }
+                    
+                    self.postMessage({ type: 'models_loaded' });
+                } catch (error) {
+                    self.postMessage({ type: 'error', message: error.message });
+                }
+            }
+            
+            else if (type === 'process_audio') {
+                if (!transcriber) return;
+                
+                try {
+                    const audioData = data.audio; // Float32Array
+                    
+                    // Run STT
+                    const sttResult = await transcriber(audioData, {
+                        language: 'cantonese',
+                        task: 'transcribe',
+                        chunk_length_s: 30,
+                    });
+
+                    let speaker = "Unknown";
+                    
+                    // Run Diarization Heuristic if enabled
+                    if (segmenter && data.mode === 'multi') {
+                        // Get frame probabilities
+                        const segResult = await segmenter(audioData);
+                        
+                        // Simple heuristic: sum probabilities for each speaker across all frames in this chunk
+                        // segResult is usually an array of objects like [{label: 'speaker_0', score: 0.9}, ...] or per frame
+                        // Transformers.js groups them nicely. We just take the top label for the chunk.
+                        if (segResult && segResult.length > 0) {
+                            // Sort by highest score
+                            segResult.sort((a, b) => b.score - a.score);
+                            const topLabel = segResult[0].label;
+                            // Map 'speaker_0' -> 'Speaker 1'
+                            const spkNum = parseInt(topLabel.split('_')[1] || "0") + 1;
+                            speaker = "Speaker " + spkNum;
+                        }
+                    } else if (data.mode === 'single') {
+                        speaker = "Speaker 1";
+                    }
+
+                    self.postMessage({ 
+                        type: 'transcript_chunk', 
+                        text: sttResult.text, 
+                        speaker: speaker,
+                        timestamp: data.timestamp
+                    });
+
+                } catch (error) {
+                    console.error("Worker processing error:", error);
+                }
+            }
+
+            else if (type === 'generate_summary') {
+                try {
+                    self.postMessage({ type: 'progress', file: 'LLM Summary Model', progress: 10 });
+                    
+                    // Free up memory from STT before loading LLM on iPad
+                    transcriber = null; 
+                    segmenter = null;
+
+                    // Load a lightweight LLM for Chinese/Cantonese summary (Qwen 0.5B is much safer for iPad than Phi-3)
+                    if (!summarizer) {
+                        summarizer = await pipeline('text-generation', 'Xenova/Qwen1.5-0.5B-Chat', {
+                            device: 'webgpu',
+                            dtype: 'q4f16', // Quantized to save VRAM
+                            progress_callback: (x) => {
+                                if (x.status === 'progress') self.postMessage({ type: 'progress', file: x.file, progress: x.progress });
+                            }
+                        });
+                    }
+
+                    const prompt = "Please summarize the following meeting transcript into concise meeting minutes with bullet points.\\n\\nTranscript:\\n" + data.text + "\\n\\nSummary:";
+                    
+                    const result = await summarizer(prompt, {
+                        max_new_tokens: 150,
+                        temperature: 0.3,
+                        do_sample: false
+                    });
+
+                    // Extract the generated text after the prompt
+                    let summaryText = result[0].generated_text;
+                    if(summaryText.includes("Summary:")) {
+                        summaryText = summaryText.split("Summary:")[1].trim();
+                    }
+
+                    self.postMessage({ type: 'summary_complete', text: summaryText });
+
+                } catch (error) {
+                    self.postMessage({ type: 'summary_complete', text: "Error generating summary. Device memory limit reached." });
+                }
+            }
+        };
+        `;
+    </script>
+
+    <!-- Main Application Logic -->
+    <script>
+        // DOM Elements
+        const ui = {
+            modelSelect: document.getElementById('model-select'),
+            modeSelect: document.getElementById('mode-select'),
+            styleColloquial: document.getElementById('style-colloquial'),
+            styleFormal: document.getElementById('style-formal'),
+            btnLoad: document.getElementById('btn-load'),
+            btnStart: document.getElementById('btn-start'),
+            btnStop: document.getElementById('btn-stop'),
+            progressContainer: document.getElementById('progress-container'),
+            progressBar: document.getElementById('progress-bar'),
+            progressText: document.getElementById('progress-text'),
+            progressFile: document.getElementById('progress-file'),
+            statusIndicator: document.getElementById('status-indicator'),
+            statusText: document.getElementById('status-text'),
+            transcriptBox: document.getElementById('transcript-box'),
+            vadIndicator: document.getElementById('vad-indicator'),
+            exportPanel: document.getElementById('export-panel'),
+            btnExportTxt: document.getElementById('btn-export-txt'),
+            btnExportJson: document.getElementById('btn-export-json'),
+            btnExportAudio: document.getElementById('btn-export-audio'),
+            btnAiSummary: document.getElementById('btn-ai-summary'),
+            summaryArea: document.getElementById('summary-area'),
+            summaryText: document.getElementById('summary-text')
+        };
+
+        // Application State
+        const state = {
+            outputStyle: 'colloquial', // 'colloquial' or 'formal'
+            isRecording: false,
+            transcriptData: [], // Store chunks {timestamp, speaker, original, mapped}
+            audioChunks: [], // For exporting .webm
+            startTime: 0
+        };
+
+        // Cantonese -> Formal Chinese Dictionary Map
+        const cantoneseDict = {
+            '係': '是', '唔係': '不是', '佢': '他', '佢哋': '他們', '我哋': '我們', '你哋': '你們',
+            '嘅': '的', '喺': '在', '咁': '這樣', '睇': '看', '諗': '想', '食': '吃', '咗': '了', 
+            '緊': '正在', '冇': '沒有', '無': '沒有', '嚟': '來', '黎': '來', '啲': '些', 
+            '靚': '漂亮', '畀': '給', '搵': '找', '傾': '談', '屋企': '家', '返學': '上學', '返工': '上班',
+            '點解': '為什麼', '而家': '現在', '今日': '今天', '聽日': '明天', '尋日': '昨天'
+        };
+
+        function translateToFormal(text) {
+            let result = text;
+            for (const [canto, formal] of Object.entries(cantoneseDict)) {
+                result = result.replace(new RegExp(canto, 'g'), formal);
+            }
+            return result;
+        }
+
+        // Setup Web Worker
+        const blob = new Blob([document.getElementById('worker-code').textContent], { type: 'application/javascript' });
+        const workerUrl = URL.createObjectURL(blob);
+        const aiWorker = new Worker(workerUrl, { type: 'module' });
+
+        // Worker Message Handler
+        aiWorker.onmessage = (e) => {
+            const { type, data, file, progress, message, text, speaker, timestamp } = e.data;
+
+            switch (type) {
+                case 'progress':
+                    ui.progressContainer.classList.remove('hidden');
+                    ui.progressFile.innerText = file || 'Weights';
+                    const pct = Math.round(progress);
+                    ui.progressBar.style.width = `${pct}%`;
+                    ui.progressText.innerText = `${pct}%`;
+                    break;
+                case 'models_loaded':
+                    ui.progressContainer.classList.add('hidden');
+                    ui.statusIndicator.classList.replace('bg-yellow-400', 'bg-green-400');
+                    ui.statusText.innerText = "WebGPU Ready";
+                    ui.btnLoad.classList.add('hidden');
+                    ui.btnStart.disabled = false;
+                    ui.btnStart.classList.remove('opacity-50', 'cursor-not-allowed');
+                    ui.btnStart.classList.add('hover:bg-green-600', 'active:scale-95');
+                    break;
+                case 'transcript_chunk':
+                    if (text.trim() === '') return;
+                    
+                    const originalText = text.trim();
+                    const formalText = translateToFormal(originalText);
+                    
+                    state.transcriptData.push({
+                        timestamp: timestamp,
+                        speaker: speaker,
+                        colloquial: originalText,
+                        formal: formalText
+                    });
+                    
+                    renderTranscript();
+                    break;
+                case 'summary_complete':
+                    ui.progressContainer.classList.add('hidden');
+                    ui.summaryText.innerText = text;
+                    break;
+                case 'error':
+                    alert('AI Engine Error: ' + message);
+                    console.error(message);
+                    break;
+            }
+        };
+
+        // Style Switcher Logic
+        ui.styleColloquial.addEventListener('click', () => {
+            state.outputStyle = 'colloquial';
+            ui.styleColloquial.classList.replace('text-slate-500', 'text-blue-600');
+            ui.styleColloquial.classList.replace('hover:text-slate-700', 'shadow-sm');
+            ui.styleColloquial.classList.add('bg-white');
+            
+            ui.styleFormal.classList.replace('text-blue-600', 'text-slate-500');
+            ui.styleFormal.classList.replace('shadow-sm', 'hover:text-slate-700');
+            ui.styleFormal.classList.remove('bg-white');
+            renderTranscript();
+        });
+
+        ui.styleFormal.addEventListener('click', () => {
+            state.outputStyle = 'formal';
+            ui.styleFormal.classList.replace('text-slate-500', 'text-blue-600');
+            ui.styleFormal.classList.replace('hover:text-slate-700', 'shadow-sm');
+            ui.styleFormal.classList.add('bg-white');
+            
+            ui.styleColloquial.classList.replace('text-blue-600', 'text-slate-500');
+            ui.styleColloquial.classList.replace('shadow-sm', 'hover:text-slate-700');
+            ui.styleColloquial.classList.remove('bg-white');
+            renderTranscript();
+        });
+
+        function renderTranscript() {
+            if (state.transcriptData.length === 0) {
+                ui.transcriptBox.innerHTML = '<p class="text-slate-400 italic text-center mt-10">Listening...</p>';
+                return;
+            }
+
+            ui.transcriptBox.innerHTML = '';
+            state.transcriptData.forEach((item) => {
+                const textToShow = state.outputStyle === 'colloquial' ? item.colloquial : item.formal;
+                const spkClass = item.speaker === 'Speaker 1' ? 'speaker-1' : (item.speaker === 'Speaker 2' ? 'speaker-2' : 'speaker-unknown');
+                
+                const div = document.createElement('div');
+                div.className = 'animate-fade-in bg-white/80 p-3 rounded-xl shadow-sm border border-slate-100 flex gap-3';
+                div.innerHTML = `
+                    <div class="text-xs text-slate-400 font-mono pt-1 shrink-0 w-12">${formatTime(item.timestamp)}</div>
+                    <div>
+                        <span class="${spkClass} text-sm mr-2">${item.speaker}:</span>
+                        <span class="text-slate-800">${textToShow}</span>
+                    </div>
+                `;
+                ui.transcriptBox.appendChild(div);
+            });
+            ui.transcriptBox.scrollTop = ui.transcriptBox.scrollHeight;
+        }
+
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        // Audio & VAD Implementation
+        let audioContext;
+        let mediaStream;
+        let mediaRecorder;
+        let processor;
+        let analyser;
+        let pcmDataBuffer = [];
+        const VAD_THRESHOLD = 0.01; // Energy threshold
+        const SAMPLE_RATE = 16000;
+        const CHUNK_MS = 3000; // 3 seconds per chunk to AI
+
+        async function startRecording() {
+            try {
+                mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
+                
+                // For exporting original audio
+                mediaRecorder = new MediaRecorder(mediaStream, { mimeType: 'audio/webm' });
+                mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) state.audioChunks.push(e.data); };
+                mediaRecorder.start();
+
+                // For VAD and STT Processing
+                const source = audioContext.createMediaStreamSource(mediaStream);
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 512;
+                source.connect(analyser);
+
+                // We use script processor for Safari/iPad compatibility over AudioWorklet for simplicity in single-file
+                processor = audioContext.createScriptProcessor(4096, 1, 1);
+                analyser.connect(processor);
+                processor.connect(audioContext.destination);
+
+                let chunkTimer = 0;
+                let activeAudio = false;
+
+                processor.onaudioprocess = (e) => {
+                    const inputData = e.inputBuffer.getChannelData(0);
+                    
+                    // VAD Check (RMS Energy)
+                    let sumSquares = 0;
+                    for (let i = 0; i < inputData.length; i++) sumSquares += inputData[i] * inputData[i];
+                    const rms = Math.sqrt(sumSquares / inputData.length);
+                    
+                    const isVoiced = rms > VAD_THRESHOLD;
+                    
+                    // Update VAD UI safely
+                    if (isVoiced && !activeAudio) {
+                        ui.vadIndicator.innerText = "VAD: Speech";
+                        ui.vadIndicator.classList.replace('bg-slate-200', 'bg-green-200');
+                        ui.vadIndicator.classList.replace('text-slate-500', 'text-green-800');
+                        activeAudio = true;
+                    } else if (!isVoiced && activeAudio) {
+                        ui.vadIndicator.innerText = "VAD: Silence";
+                        ui.vadIndicator.classList.replace('bg-green-200', 'bg-slate-200');
+                        ui.vadIndicator.classList.replace('text-green-800', 'text-slate-500');
+                        activeAudio = false;
+                    }
+
+                    // Buffer audio if someone is speaking, or slightly pad silence
+                    if (isVoiced || pcmDataBuffer.length > 0) {
+                        pcmDataBuffer.push(new Float32Array(inputData));
+                    }
+
+                    // Process chunk every CHUNK_MS
+                    chunkTimer += (inputData.length / SAMPLE_RATE) * 1000;
+                    if (chunkTimer >= CHUNK_MS) {
+                        if (pcmDataBuffer.length > 0) {
+                            sendChunkToWorker();
+                        }
+                        chunkTimer = 0;
+                    }
+                };
+
+                state.isRecording = true;
+                state.startTime = audioContext.currentTime;
+                state.transcriptData = [];
+                state.audioChunks = [];
+                
+                ui.btnStart.classList.add('hidden');
+                ui.btnStop.disabled = false;
+                ui.btnStop.classList.remove('opacity-50', 'cursor-not-allowed');
+                ui.btnStop.classList.add('hover:bg-red-600', 'active:scale-95');
+                ui.statusIndicator.classList.replace('bg-green-400', 'bg-red-500');
+                ui.statusIndicator.classList.add('animate-pulse');
+                ui.statusText.innerText = "Recording...";
+                ui.exportPanel.classList.add('hidden');
+                ui.summaryArea.classList.add('hidden');
+
+                renderTranscript(); // Clear "Waiting to start"
+
+            } catch (err) {
+                alert("Microphone access denied or failed. " + err.message);
+            }
+        }
+
+        function sendChunkToWorker() {
+            // Flatten buffer array
+            const totalLength = pcmDataBuffer.reduce((acc, val) => acc + val.length, 0);
+            const flatBuffer = new Float32Array(totalLength);
+            let offset = 0;
+            for (let chunk of pcmDataBuffer) {
+                flatBuffer.set(chunk, offset);
+                offset += chunk.length;
+            }
+            
+            // Calculate relative timestamp
+            const currentRelTime = audioContext.currentTime - state.startTime;
+
+            aiWorker.postMessage({
+                type: 'process_audio',
+                data: {
+                    audio: flatBuffer,
+                    timestamp: currentRelTime,
+                    mode: ui.modeSelect.value
+                }
+            });
+
+            pcmDataBuffer = []; // Reset for next chunk
+        }
+
+        function stopRecording() {
+            if (!state.isRecording) return;
+            state.isRecording = false;
+
+            // Process any remaining audio
+            if (pcmDataBuffer.length > 0) sendChunkToWorker();
+
+            // Stop APIs
+            mediaRecorder.stop();
+            processor.disconnect();
+            analyser.disconnect();
+            audioContext.close();
+            mediaStream.getTracks().forEach(t => t.stop());
+
+            // Update UI
+            ui.btnStop.classList.add('hidden');
+            ui.btnStart.classList.remove('hidden');
+            ui.statusIndicator.classList.remove('animate-pulse', 'bg-red-500');
+            ui.statusIndicator.classList.add('bg-green-400');
+            ui.statusText.innerText = "WebGPU Ready";
+            ui.vadIndicator.innerText = "VAD: Stopped";
+            
+            ui.exportPanel.classList.remove('hidden');
+        }
+
+        // Event Listeners
+        ui.btnLoad.addEventListener('click', () => {
+            ui.btnLoad.innerText = "Loading... (May take a minute)";
+            ui.btnLoad.disabled = true;
+            
+            aiWorker.postMessage({
+                type: 'load_models',
+                data: {
+                    model: ui.modelSelect.value,
+                    mode: ui.modeSelect.value
+                }
+            });
+        });
+
+        ui.btnStart.addEventListener('click', startRecording);
+        ui.btnStop.addEventListener('click', stopRecording);
+
+        // Export Functions
+        ui.btnExportTxt.addEventListener('click', () => {
+            const textContent = state.transcriptData.map(item => 
+                `[${formatTime(item.timestamp)}] ${item.speaker}: ${state.outputStyle === 'colloquial' ? item.colloquial : item.formal}`
+            ).join('\n');
+            const blob = new Blob([textContent], { type: 'text/plain' });
+            downloadBlob(blob, 'transcript.txt');
+        });
+
+        ui.btnExportJson.addEventListener('click', () => {
+            const blob = new Blob([JSON.stringify(state.transcriptData, null, 2)], { type: 'application/json' });
+            downloadBlob(blob, 'transcript.json');
+        });
+
+        ui.btnExportAudio.addEventListener('click', () => {
+            const blob = new Blob(state.audioChunks, { type: 'audio/webm' });
+            downloadBlob(blob, 'recording.webm');
+        });
+
+        function downloadBlob(blob, filename) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+
+        // LLM Summary Integration
+        ui.btnAiSummary.addEventListener('click', () => {
+            if (state.transcriptData.length === 0) return alert("No transcript to summarize.");
+            
+            ui.summaryArea.classList.remove('hidden');
+            ui.summaryText.innerHTML = '<span class="animate-pulse">Loading LLM and generating summary... (This frees STT memory temporarily)</span>';
+            
+            const fullText = state.transcriptData.map(item => `${item.speaker}: ${item.formal}`).join('\n');
+            
+            aiWorker.postMessage({
+                type: 'generate_summary',
+                data: { text: fullText }
+            });
+        });
+
+        // Add tailwind fade-in animation
+        tailwind.config = {
+            theme: {
+                extend: {
+                    animation: { 'fade-in': 'fadeIn 0.3s ease-out' },
+                    keyframes: { fadeIn: { '0%': { opacity: '0', transform: 'translateY(5px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } } }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
