@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>專業 QR Code 產生器</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 QR Code 產生套件 (qrcodejs) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <!-- 引入 Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* 自訂簡單的 Toast 動畫 */
+        .toast-enter {
+            opacity: 0;
+            transform: translateY(1rem);
+        }
+        .toast-enter-active {
+            opacity: 1;
+            transform: translateY(0);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .toast-leave {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .toast-leave-active {
+            opacity: 0;
+            transform: translateY(-1rem);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        /* 隱藏預設的 scrollbar 但保留滾動功能以保持版面整潔 */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* 隱藏元素用的 class */
+        .hidden-tab {
+            display: none !important;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans min-h-screen p-4 md:p-8">
+
+    <!-- 全域 Toast 提示容器 -->
+    <div id="toast-container" class="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <div class="max-w-6xl mx-auto">
+        <!-- 標題區 -->
+        <header class="mb-8 text-center md:text-left">
+            <h1 class="text-3xl font-bold text-gray-900 flex items-center justify-center md:justify-start gap-2">
+                <i data-lucide="qr-code" class="w-8 h-8 text-blue-600"></i>
+                QR Code 互動產生器
+            </h1>
+            <p class="text-gray-500 mt-2">輸入網址，自訂中心圖示，即時預覽並輸出多種尺寸。</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            
+            <!-- 左側：控制面板與 QR 預覽 -->
+            <div class="lg:col-span-5 space-y-6">
+                
+                <!-- 控制卡片 -->
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                    <!-- 1. 網址輸入 -->
+                    <div class="mb-6">
+                        <label for="url-input" class="block text-sm font-medium text-gray-700 mb-2">網址 (URL)</label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <i data-lucide="link" class="w-5 h-5 text-gray-400"></i>
+                            </div>
+                            <input type="text" id="url-input" 
+                                class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-colors"
+                                placeholder="https://example.com" value="https://example.com">
+                        </div>
+                    </div>
+
+                    <!-- 2. 圖示選項 -->
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">中心圖示設定</label>
+                        <div class="space-y-3">
+                            <label class="flex items-center p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                                <input type="radio" name="iconMode" value="none" class="w-4 h-4 text-blue-600 focus:ring-blue-500" checked>
+                                <span class="ml-3 text-sm text-gray-700 font-medium">標準 (無圖示)</span>
+                            </label>
+                            
+                            <label class="flex items-center p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                                <input type="radio" name="iconMode" value="text" class="w-4 h-4 text-blue-600 focus:ring-blue-500">
+                                <span class="ml-3 text-sm text-gray-700 font-medium">預設文字 (FWFT)</span>
+                            </label>
+                            
+                            <label class="flex items-center p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                                <input type="radio" name="iconMode" value="custom" class="w-4 h-4 text-blue-600 focus:ring-blue-500">
+                                <span class="ml-3 text-sm text-gray-700 font-medium">自訂上傳圖片</span>
+                            </label>
+                        </div>
+                        
+                        <!-- 自訂圖片上傳區 (預設隱藏) -->
+                        <div id="custom-upload-area" class="mt-3 hidden">
+                            <input type="file" id="image-upload" accept="image/png, image/jpeg, image/svg+xml" 
+                                class="block w-full text-sm text-gray-500
+                                file:mr-4 file:py-2 file:px-4
+                                file:rounded-full file:border-0
+                                file:text-sm file:font-semibold
+                                file:bg-blue-50 file:text-blue-700
+                                hover:file:bg-blue-100 transition-colors">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- QR Code 預覽與操作卡片 -->
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col items-center">
+                    <h2 class="text-sm font-medium text-gray-700 self-start mb-4">即時預覽</h2>
+                    
+                    <!-- 預覽畫布容器 -->
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-6 flex items-center justify-center w-full min-h-[256px]">
+                        <canvas id="qr-preview" class="max-w-full h-auto shadow-sm"></canvas>
+                    </div>
+
+                    <!-- 操作按鈕區 -->
+                    <div class="w-full space-y-4">
+                        <div class="grid grid-cols-3 gap-2">
+                            <button onclick="copyQR(256)" class="flex flex-col items-center justify-center p-2 bg-gray-50 hover:bg-blue-50 text-gray-700 hover:text-blue-600 border border-gray-200 hover:border-blue-200 rounded-lg transition-all text-xs font-medium gap-1 group">
+                                <i data-lucide="copy" class="w-4 h-4 text-gray-400 group-hover:text-blue-500"></i>
+                                小 (256px)
+                            </button>
+                            <button onclick="copyQR(512)" class="flex flex-col items-center justify-center p-2 bg-gray-50 hover:bg-blue-50 text-gray-700 hover:text-blue-600 border border-gray-200 hover:border-blue-200 rounded-lg transition-all text-xs font-medium gap-1 group">
+                                <i data-lucide="copy" class="w-4 h-4 text-gray-400 group-hover:text-blue-500"></i>
+                                中 (512px)
+                            </button>
+                            <button onclick="copyQR(1024)" class="flex flex-col items-center justify-center p-2 bg-gray-50 hover:bg-blue-50 text-gray-700 hover:text-blue-600 border border-gray-200 hover:border-blue-200 rounded-lg transition-all text-xs font-medium gap-1 group">
+                                <i data-lucide="copy" class="w-4 h-4 text-gray-400 group-hover:text-blue-500"></i>
+                                大 (1024px)
+                            </button>
+                        </div>
+                        
+                        <div class="flex gap-2">
+                            <button onclick="downloadQR()" class="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-4 rounded-lg font-medium transition-colors">
+                                <i data-lucide="download" class="w-5 h-5"></i>
+                                下載 PNG (最高畫質)
+                            </button>
+                            <button onclick="resetAll()" class="flex items-center justify-center gap-2 bg-white hover:bg-red-50 text-gray-600 hover:text-red-600 border border-gray-200 hover:border-red-200 py-2.5 px-4 rounded-lg font-medium transition-colors" title="重設所有設定">
+                                <i data-lucide="rotate-ccw" class="w-5 h-5"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- 右側：目標網址即時預覽 -->
+            <div class="lg:col-span-7 h-[600px] lg:h-auto min-h-[500px] flex flex-col bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div class="p-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="layout" class="w-5 h-5 text-gray-500"></i>
+                        <h2 class="text-sm font-medium text-gray-700">目標網址確認</h2>
+                    </div>
+                    
+                    <div class="flex items-center gap-3">
+                        <!-- 於新分頁開啟按鈕 -->
+                        <a id="preview-external-link" href="https://example.com" target="_blank" class="px-2 py-1 bg-white border border-gray-200 hover:bg-gray-50 hover:text-blue-600 rounded text-xs text-gray-500 flex items-center gap-1 transition-colors">
+                            <i data-lucide="external-link" class="w-3 h-3"></i>
+                            開啟連結測試
+                        </a>
+                        <div class="hidden sm:flex gap-1.5">
+                            <div class="w-3 h-3 rounded-full bg-red-400"></div>
+                            <div class="w-3 h-3 rounded-full bg-yellow-400"></div>
+                            <div class="w-3 h-3 rounded-full bg-green-400"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 預覽模式切換標籤 -->
+                <div class="flex border-b border-gray-200 bg-white">
+                    <button onclick="switchTab('screenshot')" id="tab-btn-screenshot" class="flex-1 py-3 text-sm font-medium border-b-2 border-blue-600 text-blue-600 bg-blue-50/30 transition-colors flex justify-center items-center gap-2">
+                        <i data-lucide="image" class="w-4 h-4"></i>
+                        畫面截圖 <span class="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full ml-1">保證顯示</span>
+                    </button>
+                    <button onclick="switchTab('iframe')" id="tab-btn-iframe" class="flex-1 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition-colors flex justify-center items-center gap-2">
+                        <i data-lucide="globe" class="w-4 h-4"></i>
+                        互動網頁 <span class="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full ml-1">可能被阻擋</span>
+                    </button>
+                </div>
+
+                <!-- 預覽內容區 -->
+                <div class="flex-1 w-full bg-gray-100 relative overflow-hidden">
+                    
+                    <!-- 模式 A：靜態截圖 (預設) -->
+                    <div id="view-screenshot" class="absolute inset-0 w-full h-full bg-gray-100 flex flex-col">
+                        <!-- 載入中遮罩 -->
+                        <div id="screenshot-loader" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-50 text-gray-400 z-10 transition-opacity duration-300">
+                            <i data-lucide="camera" class="w-8 h-8 animate-pulse mb-3 text-blue-400"></i>
+                            <span class="text-sm font-medium text-gray-600">正在雲端擷取網站畫面...</span>
+                            <span class="text-xs text-gray-400 mt-1">這需要幾秒鐘的時間</span>
+                        </div>
+                        
+                        <!-- 截圖圖片 -->
+                        <div class="flex-1 overflow-auto p-4 flex justify-center items-start">
+                            <img id="screenshot-img" src="" alt="網站截圖" class="max-w-full h-auto rounded shadow-sm border border-gray-200 bg-white hidden">
+                            
+                            <!-- 截圖失敗提示 -->
+                            <div id="screenshot-error" class="hidden flex-col items-center justify-center text-gray-400 mt-20">
+                                <i data-lucide="image-off" class="w-10 h-10 mb-3 text-gray-300"></i>
+                                <p class="text-sm font-medium mb-1">無法擷取畫面</p>
+                                <p class="text-xs text-gray-500">此網址可能無效、為私人內部網路，或阻擋了機器人訪問。</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 模式 B：互動 Iframe (隱藏) -->
+                    <div id="view-iframe" class="absolute inset-0 w-full h-full hidden-tab">
+                        <!-- 載入中遮罩 -->
+                        <div id="iframe-loader" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-50 text-gray-400 z-10 transition-opacity duration-300 pointer-events-none">
+                            <i data-lucide="loader-2" class="w-8 h-8 animate-spin mb-2 text-blue-400"></i>
+                            <span class="text-sm font-medium text-gray-600">載入互動預覽中...</span>
+                        </div>
+                        
+                        <!-- 提示文字 (常駐在底層) -->
+                        <div class="absolute inset-0 flex flex-col items-center justify-center bg-gray-50 text-gray-400 z-0 p-6 text-center">
+                            <i data-lucide="shield-alert" class="w-10 h-10 mb-3 text-gray-300"></i>
+                            <p class="text-sm font-medium mb-1 text-gray-600">若畫面空白或顯示拒絕連線</p>
+                            <p class="text-xs text-gray-500 mb-4">代表該網站啟用安全機制 (X-Frame-Options) 禁止被預覽。</p>
+                            <button onclick="switchTab('screenshot')" class="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm text-blue-600 hover:bg-blue-50 transition-colors shadow-sm">
+                                改用「畫面截圖」查看
+                            </button>
+                        </div>
+
+                        <!-- Iframe 本體 -->
+                        <iframe id="url-preview-frame" class="w-full h-full border-0 relative z-10 bg-transparent" title="URL Preview"></iframe>
+                    </div>
+
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // 初始化 Lucide 圖示
+        lucide.createIcons();
+
+        // 狀態變數
+        const state = {
+            url: 'https://example.com',
+            iconMode: 'none', // 'none', 'text', 'custom'
+            customImageSrc: null,
+            previewTab: 'screenshot' // 'screenshot' 或 'iframe'
+        };
+
+        // DOM 元素
+        const els = {
+            urlInput: document.getElementById('url-input'),
+            radios: document.getElementsByName('iconMode'),
+            uploadArea: document.getElementById('custom-upload-area'),
+            fileInput: document.getElementById('image-upload'),
+            previewCanvas: document.getElementById('qr-preview'),
+            externalLink: document.getElementById('preview-external-link'),
+            
+            // Tab 相關
+            tabBtnScreenshot: document.getElementById('tab-btn-screenshot'),
+            tabBtnIframe: document.getElementById('tab-btn-iframe'),
+            viewScreenshot: document.getElementById('view-screenshot'),
+            viewIframe: document.getElementById('view-iframe'),
+            
+            // Iframe 相關
+            iframe: document.getElementById('url-preview-frame'),
+            iframeLoader: document.getElementById('iframe-loader'),
+            
+            // Screenshot 相關
+            screenshotImg: document.getElementById('screenshot-img'),
+            screenshotLoader: document.getElementById('screenshot-loader'),
+            screenshotError: document.getElementById('screenshot-error')
+        };
+
+        // --- 工具函式 ---
+
+        // 防抖函式 (Debounce)
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+
+        // 顯示 Toast 提示
+        function showToast(message, isError = false) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            // 設定樣式
+            const bgColor = isError ? 'bg-red-600' : 'bg-green-600';
+            const icon = isError ? 'x-circle' : 'check-circle-2';
+            
+            toast.className = `flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg text-white text-sm font-medium ${bgColor} toast-enter`;
+            toast.innerHTML = `<i data-lucide="${icon}" class="w-5 h-5"></i><span>${message}</span>`;
+            
+            container.appendChild(toast);
+            lucide.createIcons({ root: toast });
+
+            // 動畫進入
+            requestAnimationFrame(() => {
+                toast.classList.remove('toast-enter');
+                toast.classList.add('toast-enter-active');
+            });
+
+            // 3秒後移除
+            setTimeout(() => {
+                toast.classList.remove('toast-enter-active');
+                toast.classList.add('toast-leave');
+                requestAnimationFrame(() => {
+                    toast.classList.add('toast-leave-active');
+                });
+                
+                setTimeout(() => {
+                    if (container.contains(toast)) container.removeChild(toast);
+                }, 300); // 等待淡出動畫完成
+            }, 3000);
+        }
+
+        // --- 核心邏輯：生成 QR Code (包含中心圖示) ---
+        async function generateQRCanvas(size) {
+            // 如果網址是空的，給個預設值確保不報錯
+            const textToEncode = state.url.trim() || 'https://';
+            
+            // 如果 QRCode 還沒載入，拋出錯誤以免當掉
+            if (typeof QRCode === 'undefined') {
+                throw new Error("QRCode library not ready yet.");
+            }
+
+            // 建立一個暫存的容器讓 qrcodejs 生成內容
+            const tempDiv = document.createElement('div');
+            
+            // 1. 生成基礎 QR Code (容錯率 H)
+            new QRCode(tempDiv, {
+                text: textToEncode,
+                width: size,
+                height: size,
+                colorDark : "#000000",
+                colorLight : "#FFFFFF",
+                correctLevel : QRCode.CorrectLevel.H
+            });
+
+            // 取出 qrcodejs 生成的 canvas
+            const baseCanvas = tempDiv.querySelector('canvas');
+            if (!baseCanvas) {
+                throw new Error("Canvas generation failed.");
+            }
+
+            // 建立最終的 canvas 來繪製圖示
+            const finalCanvas = document.createElement('canvas');
+            finalCanvas.width = size;
+            finalCanvas.height = size;
+            const ctx = finalCanvas.getContext('2d');
+            
+            // 畫上原本的 QR Code
+            ctx.drawImage(baseCanvas, 0, 0);
+
+            // 如果不需要圖示，直接回傳
+            if (state.iconMode === 'none') {
+                return finalCanvas;
+            }
+
+            // 2. 依照不同模式計算中心位置與白底大小
+            let bgWidth, bgHeight, centerX, centerY;
+            const radius = size * 0.015; // 圓角半徑微調，讓長條形看起來更精緻
+
+            if (state.iconMode === 'text') {
+                // 模式 B: 文字模式，白底比例約為 3.5 : 1
+                bgWidth = size * 0.25;
+                bgHeight = size * 0.10;
+            } else {
+                // 模式 C: 自訂圖片模式，維持正方形比例 1:1
+                bgWidth = size * 0.22;
+                bgHeight = size * 0.22;
+            }
+
+            centerX = (size - bgWidth) / 2;
+            centerY = (size - bgHeight) / 2;
+
+            // 畫出白底，避免 QR code 線條干擾圖示
+            ctx.fillStyle = '#FFFFFF';
+            ctx.beginPath();
+            ctx.roundRect(centerX, centerY, bgWidth, bgHeight, radius);
+            ctx.fill();
+
+            // 3. 繪製內容
+            if (state.iconMode === 'text') {
+                // 模式 B: 預設文字 "FWFT"
+                ctx.fillStyle = '#000000';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                // 動態計算字體大小，以高度作為基準 (75% 的高度以保留上下白邊)
+                const fontSize = bgHeight * 0.75; 
+                ctx.font = `bold ${fontSize}px sans-serif`;
+                
+                // 將文字準確繪製在 Canvas 正中心
+                ctx.fillText('FWFT', size / 2, size / 2);
+                return finalCanvas;
+            } 
+            else if (state.iconMode === 'custom' && state.customImageSrc) {
+                // 模式 C: 自訂圖片
+                return new Promise((resolve) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        // 圖片內縮一點點，留出白邊
+                        const padding = bgWidth * 0.1;
+                        const imgWidth = bgWidth - (padding * 2);
+                        const imgHeight = bgHeight - (padding * 2);
+                        const imgX = centerX + padding;
+                        const imgY = centerY + padding;
+                        
+                        ctx.drawImage(img, imgX, imgY, imgWidth, imgHeight);
+                        resolve(finalCanvas);
+                    };
+                    img.onerror = () => {
+                        showToast('自訂圖片載入失敗，已忽略圖示', true);
+                        resolve(finalCanvas);
+                    };
+                    img.src = state.customImageSrc;
+                });
+            }
+
+            return finalCanvas;
+        }
+
+        // 更新 UI 上的 QR Code 預覽
+        async function updatePreview() {
+            try {
+                if (typeof QRCode === 'undefined') return;
+                const displayCanvas = await generateQRCanvas(256);
+                els.previewCanvas.width = displayCanvas.width;
+                els.previewCanvas.height = displayCanvas.height;
+                const ctx = els.previewCanvas.getContext('2d');
+                ctx.drawImage(displayCanvas, 0, 0);
+            } catch (error) {
+                console.error('QR 生成錯誤:', error);
+            }
+        }
+
+        // 切換預覽 Tab
+        function switchTab(tabName) {
+            state.previewTab = tabName;
+            
+            // 更新按鈕樣式
+            if (tabName === 'screenshot') {
+                els.tabBtnScreenshot.className = "flex-1 py-3 text-sm font-medium border-b-2 border-blue-600 text-blue-600 bg-blue-50/30 transition-colors flex justify-center items-center gap-2";
+                els.tabBtnIframe.className = "flex-1 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition-colors flex justify-center items-center gap-2";
+                
+                els.viewScreenshot.classList.remove('hidden-tab');
+                els.viewIframe.classList.add('hidden-tab');
+            } else {
+                els.tabBtnIframe.className = "flex-1 py-3 text-sm font-medium border-b-2 border-blue-600 text-blue-600 bg-blue-50/30 transition-colors flex justify-center items-center gap-2";
+                els.tabBtnScreenshot.className = "flex-1 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition-colors flex justify-center items-center gap-2";
+                
+                els.viewIframe.classList.remove('hidden-tab');
+                els.viewScreenshot.classList.add('hidden-tab');
+            }
+        }
+
+        // 更新網址內容 (包含 Iframe 與 Screenshot)
+        function updateUrlPreview() {
+            let targetUrl = state.url.trim();
+            
+            if (!targetUrl) {
+                // 清空狀態
+                els.iframe.src = 'about:blank';
+                els.screenshotImg.src = '';
+                els.screenshotImg.classList.add('hidden');
+                els.externalLink.href = '#';
+                els.externalLink.style.display = 'none';
+                return;
+            }
+
+            // 確保網址有 protocol
+            if (!/^https?:\/\//i.test(targetUrl)) {
+                targetUrl = 'https://' + targetUrl;
+            }
+
+            // 1. 更新外部連結按鈕
+            els.externalLink.href = targetUrl;
+            els.externalLink.style.display = 'flex';
+
+            // 2. 更新 Iframe
+            els.iframeLoader.style.opacity = '1';
+            els.iframe.style.backgroundColor = 'transparent';
+            if (els.iframe.src !== targetUrl) {
+                els.iframe.src = targetUrl;
+            }
+
+            // 3. 更新 Screenshot
+            // 改用 Thum.io API 產生輕量縮圖，並限制寬度為 600px、高度裁切 800px 以加快回應速度
+            els.screenshotLoader.classList.remove('hidden');
+            els.screenshotImg.classList.add('hidden');
+            els.screenshotError.classList.add('hidden');
+            
+            // 移除原本較慢的 Microlink，換成 Thum.io
+            const apiUrl = `https://image.thum.io/get/width/600/crop/800/noanimate/${targetUrl}`;
+            els.screenshotImg.src = apiUrl;
+        }
+
+        // --- 事件監聽器：預覽載入狀態 ---
+
+        // Iframe 載入事件
+        els.iframe.onload = () => {
+            els.iframeLoader.style.opacity = '0';
+            els.iframe.style.backgroundColor = '#ffffff';
+        };
+
+        // Screenshot 圖片載入成功
+        els.screenshotImg.onload = () => {
+            if(els.screenshotImg.src && !els.screenshotImg.src.endsWith(window.location.host + '/')) {
+                els.screenshotLoader.classList.add('hidden');
+                els.screenshotImg.classList.remove('hidden');
+            }
+        };
+
+        // Screenshot 圖片載入失敗
+        els.screenshotImg.onerror = () => {
+            els.screenshotLoader.classList.add('hidden');
+            els.screenshotError.classList.remove('hidden');
+            els.screenshotError.style.display = 'flex';
+        };
+        
+        // --- 事件監聽器：使用者輸入 ---
+
+        // 網址輸入防抖 (等待使用者打完字再更新，減少 API 請求)
+        const handleUrlChange = debounce((e) => {
+            state.url = e.target.value;
+            updatePreview();
+            updateUrlPreview();
+        }, 1000); // 延長至 1 秒，避免打字中間頻繁觸發截圖 API
+        
+        els.urlInput.addEventListener('input', handleUrlChange);
+
+        // 圖示模式切換
+        els.radios.forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                state.iconMode = e.target.value;
+                
+                // 控制上傳區塊顯示/隱藏
+                if (state.iconMode === 'custom') {
+                    els.uploadArea.classList.remove('hidden');
+                } else {
+                    els.uploadArea.classList.add('hidden');
+                }
+                
+                updatePreview();
+            });
+        });
+
+        // 圖片上傳處理
+        els.fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                if (file.size > 2 * 1024 * 1024) {
+                    showToast('圖片大小請勿超過 2MB', true);
+                    e.target.value = '';
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    state.customImageSrc = event.target.result;
+                    updatePreview();
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // --- 操作按鈕功能 ---
+
+        // 複製到剪貼簿
+        async function copyQR(size) {
+            try {
+                if (typeof QRCode === 'undefined') {
+                    showToast('QR Code 套件尚未準備好，請稍後再試', true);
+                    return;
+                }
+                const canvas = await generateQRCanvas(size);
+                
+                canvas.toBlob(async (blob) => {
+                    try {
+                        const item = new ClipboardItem({ 'image/png': blob });
+                        await navigator.clipboard.write([item]);
+                        showToast(`成功複製 ${size}px 尺寸！`);
+                    } catch (err) {
+                        console.error('Clipboard write error:', err);
+                        // Fallback 提示 (特別是在 iframe 內可能因權限問題失敗)
+                        showToast('瀏覽器安全性限制，請改用「下載 PNG」', true);
+                    }
+                }, 'image/png', 1.0);
+            } catch (err) {
+                showToast('產生圖片失敗', true);
+            }
+        }
+
+        // 下載圖片 (預設輸出 1024px 最高畫質)
+        async function downloadQR() {
+            try {
+                if (typeof QRCode === 'undefined') {
+                    showToast('QR Code 套件尚未準備好，請稍後再試', true);
+                    return;
+                }
+                const canvas = await generateQRCanvas(1024);
+                const url = canvas.toDataURL('image/png', 1.0);
+                
+                const link = document.createElement('a');
+                link.download = `QR_Code_${new Date().getTime()}.png`;
+                link.href = url;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                showToast('圖片下載中...');
+            } catch (err) {
+                showToast('下載失敗', true);
+            }
+        }
+
+        // 重設所有設定
+        function resetAll() {
+            // 重置 State
+            state.url = '';
+            state.iconMode = 'none';
+            state.customImageSrc = null;
+
+            // 重置 UI
+            els.urlInput.value = '';
+            els.radios[0].checked = true;
+            els.uploadArea.classList.add('hidden');
+            els.fileInput.value = '';
+            
+            showToast('已清空設定！');
+            updatePreview();
+            updateUrlPreview();
+        }
+
+        // ==========================================
+        // 啟動邏輯
+        // ==========================================
+
+        // 1. 立即初始化網址預覽
+        updateUrlPreview();
+
+        // 2. 輪詢檢查 QR Code 套件
+        let initRetries = 0;
+        function initApp() {
+            if (typeof QRCode === 'undefined') {
+                if (initRetries > 50) {
+                    console.error('QR Code library failed to load.');
+                    showToast('QR Code 套件載入失敗，但您仍可確認網址。', true);
+                    return;
+                }
+                initRetries++;
+                setTimeout(initApp, 100);
+                return;
+            }
+            updatePreview();
+        }
+
+        initApp();
+
+    </script>
+</body>
+</html>
