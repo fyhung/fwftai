@@ -46,14 +46,14 @@
         }
     </style>
 </head>
-<body class="bg-gray-50 text-gray-800 font-sans min-h-screen p-4 md:p-8">
+<body class="bg-gray-50 text-gray-800 font-sans min-h-screen p-3 md:p-8">
 
     <!-- 全域 Toast 提示容器 -->
-    <div id="toast-container" class="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 flex flex-col gap-2 pointer-events-none"></div>
+    <div id="toast-container" class="fixed top-3 left-1/2 transform -translate-x-1/2 z-50 flex flex-col gap-1 pointer-events-none"></div>
 
     <div class="max-w-6xl mx-auto">
         <!-- 標題區 -->
-        <header class="mb-8 text-center md:text-left">
+        <header class="mb-4 text-center md:text-left">
             <h1 class="text-3xl font-bold text-gray-900 flex items-center justify-center md:justify-start gap-2">
                 <i data-lucide="qr-code" class="w-8 h-8 text-blue-600"></i>
                 FWFT QR Code 互動產生器
@@ -69,9 +69,13 @@
                 <!-- 控制卡片 -->
                 <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                     <!-- 1. 網址輸入 -->
-                    <div class="mb-6">
-                        <label for="url-input" class="block text-sm font-medium text-gray-700 mb-2">網址 (URL)</label>
-                        <div class="relative">
+                    <div class="flex items-center gap-3 mb-2">
+                        <label for="url-input" class="block text-sm items-center font-medium  text-gray-700">網址 (URL)</label>
+                            <button onclick="resetAll()" class="flex items-center justify-center gap-1 bg-white hover:bg-red-50 text-gray-600 hover:text-red-600 border border-gray-200 hover:border-red-200 py-1 px-1 rounded-lg font-medium transition-colors" title="重設所有設定">
+                                <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                            </button>
+		    </div>
+                        <div class="relative mb-4">
                             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                 <i data-lucide="link" class="w-5 h-5 text-gray-400"></i>
                             </div>
@@ -79,23 +83,23 @@
                                 class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-colors"
                                 placeholder="https://example.com" value="https://example.com">
                         </div>
-                    </div>
+                    
 
                     <!-- 2. 圖示選項 -->
-                    <div class="mb-6">
+                    <div class="mb-4">
                         <label class="block text-sm font-medium text-gray-700 mb-2">中心圖示設定</label>
-                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                            <label class="flex items-center p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <label class="flex items-center py-2 px-4 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
                                 <input type="radio" name="iconMode" value="none" class="w-4 h-4 text-blue-600 focus:ring-blue-500" checked>
                                 <span class="ml-2 text-sm text-gray-700 font-medium">標準</span>
                             </label>
                             
-                            <label class="flex items-center p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                            <label class="flex items-center py-2 px-4 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
                                 <input type="radio" name="iconMode" value="text" class="w-4 h-4 text-blue-600 focus:ring-blue-500">
-                                <span class="ml-2 text-sm text-gray-700 font-medium">預設文字<br>(FWFT)</span>
+                                <span class="ml-2 text-sm text-gray-700 font-medium">FWFT</span>
                             </label>
                             
-                            <label class="flex items-center p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                            <label class="flex items-center py-2 px-4 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
                                 <input type="radio" name="iconMode" value="custom" class="w-4 h-4 text-blue-600 focus:ring-blue-500">
                                 <span class="ml-2 text-sm text-gray-700 font-medium">上傳圖片</span>
                             </label>
@@ -115,40 +119,36 @@
                 <!--</div>-->
 
                 <!-- QR Code 預覽與操作卡片 -->
-                <!--<div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col items-center">-->
-                    <h2 class="text-sm font-medium text-gray-700 self-start mb-4">即時預覽</h2>
+                <!--<div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-col items-center">-->
+                    <h2 class="text-sm font-medium text-gray-700 self-start mb-2">即時預覽</h2>
                     
                     <!-- 預覽畫布容器 -->
-                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-6 flex items-center justify-center w-full min-h-[256px]">
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-3 flex items-center justify-center w-full min-h-[256px]">
                         <canvas id="qr-preview" class="max-w-full h-auto shadow-sm"></canvas>
                     </div>
 
                     <!-- 操作按鈕區 -->
-                    <div class="w-full space-y-4">
-                        <div class="grid grid-cols-3 gap-2">
-                            <button onclick="copyQR(256)" class="flex flex-col items-center justify-center p-2 bg-gray-50 hover:bg-blue-50 text-gray-700 hover:text-blue-600 border border-gray-200 hover:border-blue-200 rounded-lg transition-all text-xs font-medium gap-1 group">
+                    <div class="w-full space-y-3">
+                        <div class="grid grid-cols-4 gap-2">
+                            <button onclick="copyQR(256)" class="flex flex-col items-center justify-center p-1 bg-gray-50 hover:bg-blue-50 text-gray-700 hover:text-blue-600 border border-gray-200 hover:border-blue-200 rounded-lg transition-all text-xs font-medium gap-1 group">
                                 <i data-lucide="copy" class="w-4 h-4 text-gray-400 group-hover:text-blue-500"></i>
                                 小 (256px)
                             </button>
-                            <button onclick="copyQR(512)" class="flex flex-col items-center justify-center p-2 bg-gray-50 hover:bg-blue-50 text-gray-700 hover:text-blue-600 border border-gray-200 hover:border-blue-200 rounded-lg transition-all text-xs font-medium gap-1 group">
+                            <button onclick="copyQR(512)" class="flex flex-col items-center justify-center p-1 bg-gray-50 hover:bg-blue-50 text-gray-700 hover:text-blue-600 border border-gray-200 hover:border-blue-200 rounded-lg transition-all text-xs font-medium gap-1 group">
                                 <i data-lucide="copy" class="w-4 h-4 text-gray-400 group-hover:text-blue-500"></i>
                                 中 (512px)
                             </button>
-                            <button onclick="copyQR(1024)" class="flex flex-col items-center justify-center p-2 bg-gray-50 hover:bg-blue-50 text-gray-700 hover:text-blue-600 border border-gray-200 hover:border-blue-200 rounded-lg transition-all text-xs font-medium gap-1 group">
+                            <button onclick="copyQR(1024)" class="flex flex-col items-center justify-center p-1 bg-gray-50 hover:bg-blue-50 text-gray-700 hover:text-blue-600 border border-gray-200 hover:border-blue-200 rounded-lg transition-all text-xs font-medium gap-1 group">
                                 <i data-lucide="copy" class="w-4 h-4 text-gray-400 group-hover:text-blue-500"></i>
                                 大 (1024px)
                             </button>
+                            <button onclick="downloadQR()" class="flex-1 flex items-center justify-center p-1 bg-blue-600 hover:bg-blue-700 text-white text-sm py-1 px-2 rounded-lg font-medium transition-colors">
+                                <i data-lucide="download" class="w-5 h-5"></i>
+                                下載 PNG
+                            </button>
                         </div>
                         
-                        <div class="flex gap-2">
-                            <button onclick="downloadQR()" class="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-4 rounded-lg font-medium transition-colors">
-                                <i data-lucide="download" class="w-5 h-5"></i>
-                                下載 PNG (最高畫質)
-                            </button>
-                            <button onclick="resetAll()" class="flex items-center justify-center gap-2 bg-white hover:bg-red-50 text-gray-600 hover:text-red-600 border border-gray-200 hover:border-red-200 py-2.5 px-4 rounded-lg font-medium transition-colors" title="重設所有設定">
-                                <i data-lucide="rotate-ccw" class="w-5 h-5"></i>
-                            </button>
-                        </div>
+
                     </div>
                 </div>
 
@@ -439,7 +439,7 @@
         async function updatePreview() {
             try {
                 if (typeof QRCode === 'undefined') return;
-                const displayCanvas = await generateQRCanvas(256);
+                const displayCanvas = await generateQRCanvas(240);
                 els.previewCanvas.width = displayCanvas.width;
                 els.previewCanvas.height = displayCanvas.height;
                 const ctx = els.previewCanvas.getContext('2d');
