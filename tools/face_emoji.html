@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高精度隱私保護 - 臉部 Emoji 遮擋工具</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 face-api.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+    <style>
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .emoji-btn.active { background-color: #dbeafe; border-color: #3b82f6; transform: scale(1.05); }
+        .emoji-btn { transition: all 0.2s; cursor: pointer; }
+        input[type=range] { accent-color: #4f46e5; }
+        /* 確保 Canvas 在預覽視窗中平滑顯示，且不超過容器 */
+        .preview-canvas { 
+            width: 100%; 
+            height: auto; 
+            max-height: 400px;
+            object-fit: contain; 
+            background-color: #f8fafc;
+        }
+        /* 拖放區域的高亮效果 */
+        .drag-over {
+            border-color: #4f46e5 !important;
+            background-color: #eef2ff !important;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 min-h-screen font-sans">
+
+    <!-- 模型載入提示 -->
+    <div id="loadingOverlay" class="fixed inset-0 bg-white bg-opacity-95 z-50 flex flex-col items-center justify-center transition-opacity duration-300">
+        <div class="text-center">
+            <svg class="animate-spin h-12 w-12 text-blue-600 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            <h2 class="text-2xl font-bold text-gray-800">正在啟動高精度 AI 引擎...</h2>
+            <p class="text-gray-500 mt-2">首次載入 SSD Mobilenet v1 模型中</p>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto px-4 py-6">
+        <header class="mb-4 border-b pb-4 flex justify-between items-end">
+            <div>
+                <h1 class="text-3xl font-extrabold text-gray-900 flex items-center gap-3">
+                    <span>🛡️</span> 臉部遮擋工具
+                </h1>
+                <p class="text-gray-600 mt-2">最佳化預覽效能版：支援拖放、單圖或批次處理。&nbsp&nbsp&nbsp&nbspIT組</p>
+            </div>
+
+        </header>
+
+        <div class="flex flex-col item-stretch lg:flex-row gap-6">
+            <aside class="w-full lg:w-1/3 space-y-6">
+                <!-- 1. 上傳選項 -->
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+                    <h3 class="text-lg font-bold mb-4 flex items-center gap-2">📁 1. 選擇圖片來源</h3>
+                    <div class="grid grid-cols-2 gap-2 mb-6">
+                        <label class="flex items-center justify-center gap-1 cursor-pointer bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg py-2 px-4 transition-colors">
+                            <span class="font-semibold">📷 選擇照片</span>
+                            <input type="file" id="fileInput" multiple class="hidden" accept="image/*" />
+                        </label>
+                        <label class="flex items-center justify-center gap-1 cursor-pointer bg-gray-50 hover:bg-gray-100 text-gray-600 border border-gray-200 rounded-lg py-2 px-4 transition-colors">
+                            <span class="font-semibold text-sm">📁 選擇資料夾</span>
+                            <input type="file" id="folderInput" webkitdirectory directory multiple class="hidden" accept="image/*" />
+                        </label>
+                    <p id="fileCountText" class="text-xs text-gray-400 text-center italic font-mono col-span-full"></p>
+                    </div>
+
+
+                <!-- 2. AI 靈敏度控制 -->
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="text-lg font-bold flex items-center gap-2">🧠 2. 辨識靈敏度</h3>
+                        <span id="thresholdVal" class="text-indigo-600 font-mono font-bold">0.35</span>
+                    </div>
+                    <input type="range" id="thresholdInput" min="0.1" max="0.9" step="0.05" value="0.35" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                    <div class="flex justify-between text-[10px] text-gray-400 mt-1 mb-6">
+                        <span>寬鬆 (易誤判)</span>
+                        <span>中等</span>
+                        <span>嚴格 (易漏抓)</span>
+                    </div>
+
+                <!-- 3. Emoji -->
+                    <h3 class="text-lg font-bold mb-4 flex items-center gap-2">😀 3. Emoji 樣式</h3>
+                    <div id="emojiContainer" class="flex flex-wrap gap-2 mb-6"></div>
+
+
+                <!-- 4. 尺寸與匯出 -->
+
+                    <h3 class="text-lg font-bold mb-4">📐 4. 批次匯出設定</h3>
+                    <div class="grid grid-cols-3 gap-3 mb-4">
+                        <div class="flex items-center gap-3">
+                            <input type="radio" name="resizeMode" value="none" id="r1" checked>
+                            <label for="r1" class="text-sm cursor-pointer font-medium">原始尺寸</label>
+                        </div>
+                        <!-- 將原本的 flex 改為 grid，並定義兩欄 (auto 寬度與 1份剩餘寬度) -->
+                        <div class="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1">
+                            
+                            <!-- 第一欄：Radio，讓他跨越兩列 (row-span-2) 以便垂直居中於右側兩行之間 -->
+                            <input type="radio" name="resizeMode" value="width" id="r2" class="row-span-2 mt-1.5">
+                            
+                            <!-- 第二欄第一列：Label -->
+                            <label for="r2" class="text-sm cursor-pointer font-medium">指定寬 (px)</label>
+                            
+                            <!-- 第二欄第二列：Number Input -->
+                            <input type="number" id="resizeWidthInput" disabled class="w-full border rounded px-2 py-1 text-xs outline-indigo-500" placeholder="e.g. 1920">
+                        </div>
+                        <div class="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1">
+                            <input type="radio" name="resizeMode" value="height" id="r3"  class="row-span-2 mt-1.5">
+                            <label for="r3" class="text-sm cursor-pointer font-medium">指定高 (px)</label>
+                            <input type="number" id="resizeHeightInput" disabled class="w-24 border rounded px-2 py-1 text-xs outline-indigo-500" placeholder="e.g. 1080">
+                        </div>
+                    </div>
+                    <button id="exportBtn" disabled class="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95">
+                        批次儲存至資料夾
+                    </button>
+                </div>
+            </aside>
+
+            <main class="w-full lg:w-2/3">
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-full overflow-hidden flex flex-col">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-lg font-bold">👁️ 預覽視窗</h3>
+                        <div id="processingStatus" class="flex items-center gap-2 text-sm font-bold text-indigo-600 hidden">
+                            <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                            處理中: <span id="progressText">0/0</span>
+                        </div>
+                    </div>
+                    <!-- 預覽容器與拖放區域 -->
+                    <div id="previewContainer" class="flex-grow space-y-8 h-0 overflow-y-auto pr-2 bg-gray-50 p-4 rounded-2xl border-2 border-dashed border-gray-200 transition-all">
+                        <div id="emptyPlaceholder" class="flex flex-col items-center justify-center py-40 text-gray-300">
+                            <div class="text-6xl mb-4">📸</div>
+                            <p class="text-lg font-medium">尚未載入圖片</p>
+                            <p class="text-sm opacity-60 mt-1">您可以從左側上傳，或直接將圖片拖放至此處</p>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * 狀態管理
+         */
+        const state = {
+            modelsLoaded: false,
+            allEmojis: ['😊', '😎', '😷', '🤖', '👻', '🤡', '🐯', '🐶', '🐱', '🦊', '🦁'],
+            activeEmojis: new Set(),
+            rawFiles: [], 
+            processedData: [], 
+            resizeMode: 'none',
+            minConfidence: 0.35
+        };
+
+        state.allEmojis.forEach(e => state.activeEmojis.add(e));
+        const MODEL_URL = 'https://vladmandic.github.io/face-api/model/';
+
+        const els = {
+            loadingOverlay: document.getElementById('loadingOverlay'),
+            folderInput: document.getElementById('folderInput'),
+            fileInput: document.getElementById('fileInput'),
+            thresholdInput: document.getElementById('thresholdInput'),
+            thresholdVal: document.getElementById('thresholdVal'),
+            emojiContainer: document.getElementById('emojiContainer'),
+            radioResize: document.querySelectorAll('input[name="resizeMode"]'),
+            resizeWidthInput: document.getElementById('resizeWidthInput'),
+            resizeHeightInput: document.getElementById('resizeHeightInput'),
+            exportBtn: document.getElementById('exportBtn'),
+            previewContainer: document.getElementById('previewContainer'),
+            emptyPlaceholder: document.getElementById('emptyPlaceholder'),
+            processingStatus: document.getElementById('processingStatus'),
+            progressText: document.getElementById('progressText'),
+            fileCountText: document.getElementById('fileCountText')
+        };
+
+        async function init() {
+            renderEmojiPicker();
+            setupEventListeners();
+            setupDragAndDrop();
+            try {
+                await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
+                state.modelsLoaded = true;
+                els.loadingOverlay.classList.add('opacity-0');
+                setTimeout(() => els.loadingOverlay.classList.add('hidden'), 300);
+            } catch (err) {
+                alert("模型載入失敗，請檢查網路！");
+            }
+        }
+
+        function renderEmojiPicker() {
+            els.emojiContainer.innerHTML = '';
+            state.allEmojis.forEach(emoji => {
+                const btn = document.createElement('div');
+                btn.className = `emoji-btn text-2xl p-1 rounded-lg border-1 ${state.activeEmojis.has(emoji) ? 'active' : 'border-gray-100 opacity-20 grayscale'}`;
+                btn.textContent = emoji;
+                btn.onclick = () => {
+                    if (state.activeEmojis.has(emoji)) {
+                        if (state.activeEmojis.size > 1) state.activeEmojis.delete(emoji);
+                    } else {
+                        state.activeEmojis.add(emoji);
+                    }
+                    renderEmojiPicker();
+                    refreshAllPreviews();
+                };
+                els.emojiContainer.appendChild(btn);
+            });
+        }
+
+        function setupEventListeners() {
+            const handleSelection = async (e) => {
+                const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
+                if (files.length > 0) processNewFiles(files);
+            };
+
+            els.folderInput.addEventListener('change', handleSelection);
+            els.fileInput.addEventListener('change', handleSelection);
+
+            els.thresholdInput.addEventListener('input', (e) => {
+                state.minConfidence = parseFloat(e.target.value);
+                els.thresholdVal.textContent = state.minConfidence.toFixed(2);
+            });
+
+            els.thresholdInput.addEventListener('change', async () => {
+                if (state.rawFiles.length > 0) await runBatchDetection();
+            });
+
+            els.radioResize.forEach(r => r.addEventListener('change', (e) => {
+                state.resizeMode = e.target.value;
+                els.resizeWidthInput.disabled = state.resizeMode !== 'width';
+                els.resizeHeightInput.disabled = state.resizeMode !== 'height';
+            }));
+
+            els.exportBtn.addEventListener('click', handleExport);
+        }
+
+        /**
+         * 設置拖放功能
+         */
+        function setupDragAndDrop() {
+            const container = els.previewContainer;
+
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                container.addEventListener(eventName, e => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }, false);
+            });
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                container.addEventListener(eventName, () => {
+                    container.classList.add('drag-over');
+                }, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                container.addEventListener(eventName, () => {
+                    container.classList.remove('drag-over');
+                }, false);
+            });
+
+            container.addEventListener('drop', (e) => {
+                const dt = e.dataTransfer;
+                const files = Array.from(dt.files).filter(f => f.type.startsWith('image/'));
+                if (files.length > 0) processNewFiles(files);
+            });
+        }
+
+        async function processNewFiles(files) {
+            state.rawFiles = files;
+            els.fileCountText.textContent = `載入中: ${state.rawFiles.length} 張照片`;
+            await runBatchDetection();
+            els.fileCountText.textContent = `已準備 ${state.rawFiles.length} 張照片`;
+        }
+
+        async function runBatchDetection() {
+            els.exportBtn.disabled = true;
+            els.processingStatus.classList.remove('hidden');
+            els.previewContainer.innerHTML = '';
+            state.processedData = [];
+
+            const options = new faceapi.SsdMobilenetv1Options({ minConfidence: state.minConfidence });
+
+            for (let i = 0; i < state.rawFiles.length; i++) {
+                els.progressText.textContent = `${i + 1}/${state.rawFiles.length}`;
+                const file = state.rawFiles[i];
+                
+                await new Promise(resolve => {
+                    const reader = new FileReader();
+                    reader.onload = async (e) => {
+                        const img = new Image();
+                        img.onload = async () => {
+                            const detections = await faceapi.detectAllFaces(img, options);
+                            const data = { file, img, detections };
+                            state.processedData.push(data);
+                            createPreviewRow(data, state.processedData.length - 1);
+                            resolve();
+                        };
+                        img.src = e.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
+
+            if (state.processedData.length === 0) {
+                els.previewContainer.appendChild(els.emptyPlaceholder);
+            }
+
+            els.processingStatus.classList.add('hidden');
+            els.exportBtn.disabled = false;
+        }
+
+        function createPreviewRow(data, index) {
+            const row = document.createElement('div');
+            row.className = 'bg-white border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all hover:shadow-md';
+            row.innerHTML = `
+                <div class="flex items-center justify-between px-4 py-3 bg-gray-50 border-b">
+                    <div class="flex flex-col">
+                        <span class="text-xs font-bold text-gray-700 truncate max-w-[200px]">${data.file.name}</span>
+                        <span class="text-[10px] text-gray-400 uppercase font-mono">${data.img.width} x ${data.img.height} PX</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-2 py-1 rounded">偵測到 ${data.detections.length} 張臉</span>
+                        <button onclick="downloadSingle(${index})" class="bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors">
+                            <span>⬇️ 下載單張</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="p-4 grid grid-cols-1 md:grid-cols-2 gap-6 bg-white">
+                    <div class="flex flex-col items-center">
+                        <p class="text-[10px] text-gray-400 uppercase mb-2 tracking-widest">Original 原始</p>
+                        <img src="${data.img.src}" class="w-auto object-contain rounded border">
+                    </div>
+                    <div class="flex flex-col items-center">
+                        <p class="text-[10px] text-indigo-500 uppercase mb-2 tracking-widest font-bold">Processed 預覽</p>
+                        <canvas data-index="${index}" class="preview-canvas rounded border shadow-sm"></canvas>
+                    </div>
+                </div>
+            `;
+            els.previewContainer.appendChild(row);
+            drawCanvas(row.querySelector('canvas'), data);
+        }
+
+        /**
+         * 繪圖核心
+         * targetW 與 targetH 擇一傳入即可進行等比縮放
+         */
+        function drawCanvas(canvas, data, targetW = null, targetH = null) {
+            const ctx = canvas.getContext('2d', { alpha: false });
+            const origW = data.img.width;
+            const origH = data.img.height;
+
+            let drawW = origW;
+            let drawH = origH;
+
+            if (targetW) {
+                drawW = targetW;
+                drawH = Math.round(origH * (targetW / origW));
+            } else if (targetH) {
+                drawH = targetH;
+                drawW = Math.round(origW * (targetH / origH));
+            }
+
+            canvas.width = drawW;
+            canvas.height = drawH;
+            ctx.drawImage(data.img, 0, 0, drawW, drawH);
+
+            const emojiList = Array.from(state.activeEmojis);
+            const scaleX = drawW / origW;
+
+            data.detections.forEach(det => {
+                const box = det.box;
+                const emoji = emojiList[Math.floor(Math.random() * emojiList.length)];
+                // 這裡的比例需根據寬度縮放比例調整，確保位置與遮擋一致
+                const fontSize = box.width * scaleX * 1.35;
+                ctx.font = `${fontSize}px Arial, "Apple Color Emoji", "Segoe UI Emoji"`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(emoji, (box.x + box.width / 2) * scaleX, (box.y + box.height / 2) * scaleX);
+            });
+        }
+
+        function refreshAllPreviews() {
+            document.querySelectorAll('.preview-canvas').forEach(cvs => {
+                const data = state.processedData[cvs.dataset.index];
+                if (data) drawCanvas(cvs, data);
+            });
+        }
+
+        window.downloadSingle = function(index) {
+            const data = state.processedData[index];
+            if (!data) return;
+            const tempCanvas = document.createElement('canvas');
+            drawCanvas(tempCanvas, data);
+            const link = document.createElement('a');
+            link.download = `protected_${data.file.name}`;
+            link.href = tempCanvas.toDataURL('image/jpeg', 0.92);
+            link.click();
+        };
+
+        async function handleExport() {
+            if (!window.showDirectoryPicker) return alert("請使用 Chrome/Edge 進行批次儲存。");
+            let tW = state.resizeMode === 'width' ? parseInt(els.resizeWidthInput.value) : null;
+            let tH = state.resizeMode === 'height' ? parseInt(els.resizeHeightInput.value) : null;
+            
+            try {
+                const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                const originalBtnText = els.exportBtn.textContent;
+                
+                for (let i = 0; i < state.processedData.length; i++) {
+                    els.exportBtn.textContent = `💾 寫入中 (${i + 1}/${state.processedData.length})`;
+                    const data = state.processedData[i];
+                    const offCanvas = document.createElement('canvas');
+                    drawCanvas(offCanvas, data, tW, tH);
+
+                    const blob = await new Promise(r => offCanvas.toBlob(r, 'image/jpeg', 0.92));
+                    const fileHandle = await dirHandle.getFileHandle(`protected_${data.file.name}`, { create: true });
+                    const writable = await fileHandle.createWritable();
+                    await writable.write(blob);
+                    await writable.close();
+                }
+                alert("批次儲存完成！");
+                els.exportBtn.textContent = originalBtnText;
+            } catch (err) {
+                if (err.name !== 'AbortError') console.error(err);
+                els.exportBtn.disabled = false;
+            }
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
