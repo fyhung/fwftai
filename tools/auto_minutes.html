@@ -166,6 +166,7 @@
                 
                 // Run STT Inference
                 const sttResult = await transcriber(audioData, {
+                    language: 'zh',
                     task: 'transcribe',
                     chunk_length_s: 30,
                 });
@@ -241,7 +242,7 @@
                     // Try WebGPU first on Desktop/Android
                     const pipe = await pipeline(task, model, {
                         device: 'webgpu',
-                        dtype: isQuantized ? 'q4f16' : 'fp16',
+                        dtype: 'fp32', // FIXED: 4-bit quantization breaks Whisper causing hallucinations
                         progress_callback: reportProgress
                     });
                     self.postMessage({ type: 'log', message: `Successfully loaded ${model} via WebGPU.` });
@@ -515,7 +516,7 @@
         let pcmDataBuffer = [];
         const VAD_THRESHOLD = 0.005; // iPad mics are sensitive
         const SAMPLE_RATE = 16000;
-        const CHUNK_MS = 3000; // Dispatch every 3s
+        const CHUNK_MS = 5000; // Increased to 5s to give Whisper better context
 
         async function startRecording() {
             try {
@@ -539,6 +540,7 @@
 
                 let chunkTimer = 0;
                 let activeAudio = false;
+                let voicedFramesCount = 0;
 
                 processor.onaudioprocess = (e) => {
                     if (!state.isRecording) return;
@@ -551,6 +553,8 @@
                     const rms = Math.sqrt(sumSquares / inputData.length);
                     const isVoiced = rms > VAD_THRESHOLD;
                     
+                    if (isVoiced) voicedFramesCount++;
+
                     if (isVoiced && !activeAudio) {
                         ui.vadIndicator.innerText = "VAD: Speech";
                         ui.vadIndicator.classList.replace('bg-slate-100', 'bg-emerald-100');
@@ -569,8 +573,14 @@
 
                     chunkTimer += (inputData.length / SAMPLE_RATE) * 1000;
                     if (chunkTimer >= CHUNK_MS) {
-                        if (pcmDataBuffer.length > 0) sendChunkToWorker();
+                        // Prevent sending pure silence/noise spikes which cause hallucinations
+                        if (pcmDataBuffer.length > 0 && voicedFramesCount > 3) {
+                            sendChunkToWorker();
+                        } else {
+                            pcmDataBuffer = []; // Discard silence chunk
+                        }
                         chunkTimer = 0;
+                        voicedFramesCount = 0;
                     }
                 };
 
