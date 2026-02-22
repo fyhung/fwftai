@@ -151,6 +151,56 @@
         let transcriber = null;
         let segmenter = null;
 
+        // --- NEW: Queue system to prevent WebGPU session collisions ---
+        let isProcessing = false;
+        const audioQueue = [];
+
+        async function processAudioQueue() {
+            if (isProcessing || audioQueue.length === 0) return;
+            isProcessing = true;
+
+            const data = audioQueue.shift();
+
+            try {
+                const audioData = data.audio;
+                
+                // Run STT Inference
+                const sttResult = await transcriber(audioData, {
+                    task: 'transcribe',
+                    chunk_length_s: 30,
+                });
+
+                let speaker = "Unknown";
+                
+                // Run Diarization Inference
+                if (segmenter && data.mode === 'multi') {
+                    const segResult = await segmenter(audioData);
+                    if (segResult && segResult.length > 0) {
+                        segResult.sort((a, b) => b.score - a.score);
+                        const topLabel = segResult[0].label;
+                        const spkNum = parseInt(topLabel.split('_')[1] || "0") + 1;
+                        speaker = "Speaker " + spkNum;
+                    }
+                } else if (data.mode === 'single') {
+                    speaker = "Speaker 1";
+                }
+
+                self.postMessage({ 
+                    type: 'transcript_chunk', 
+                    text: sttResult.text, 
+                    speaker: speaker,
+                    timestamp: data.timestamp
+                });
+
+            } catch (error) {
+                self.postMessage({ type: 'log', message: "Inference error: " + error.message });
+            } finally {
+                // Unlock and process the next chunk if one is waiting
+                isProcessing = false;
+                processAudioQueue();
+            }
+        }
+
         // Track download progress for multiple files
         const downloadProgress = {};
 
@@ -238,42 +288,9 @@
             else if (type === 'process_audio') {
                 if (!transcriber) return;
                 
-                try {
-                    const audioData = data.audio;
-                    
-                    // Run STT Inference
-                    const sttResult = await transcriber(audioData, {
-                        // Removed strict 'language' parameter to allow Whisper to auto-detect
-                        // and prevent the empty dictionary crash.
-                        task: 'transcribe',
-                        chunk_length_s: 30,
-                    });
-
-                    let speaker = "Unknown";
-                    
-                    // Run Diarization Inference
-                    if (segmenter && data.mode === 'multi') {
-                        const segResult = await segmenter(audioData);
-                        if (segResult && segResult.length > 0) {
-                            segResult.sort((a, b) => b.score - a.score);
-                            const topLabel = segResult[0].label;
-                            const spkNum = parseInt(topLabel.split('_')[1] || "0") + 1;
-                            speaker = "Speaker " + spkNum;
-                        }
-                    } else if (data.mode === 'single') {
-                        speaker = "Speaker 1";
-                    }
-
-                    self.postMessage({ 
-                        type: 'transcript_chunk', 
-                        text: sttResult.text, 
-                        speaker: speaker,
-                        timestamp: data.timestamp
-                    });
-
-                } catch (error) {
-                    self.postMessage({ type: 'log', message: "Inference error: " + error.message });
-                }
+                // Push incoming audio to the queue instead of running immediately
+                audioQueue.push(data);
+                processAudioQueue();
             }
         };
     </script>
