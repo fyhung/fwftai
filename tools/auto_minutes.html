@@ -243,7 +243,8 @@
                     
                     // Run STT Inference
                     const sttResult = await transcriber(audioData, {
-                        language: 'yue',
+                        // Removed strict 'language' parameter to allow Whisper to auto-detect
+                        // and prevent the empty dictionary crash.
                         task: 'transcribe',
                         chunk_length_s: 30,
                     });
